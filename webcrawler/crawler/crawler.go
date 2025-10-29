@@ -90,8 +90,10 @@ func (c *Crawler) FindLinks(uri *url.URL, reader io.Reader) []string {
 	for {
 		switch tt := tokenizer.Next(); tt {
 		case html.ErrorToken:
-			// End of document or parse error — return collected links
 			links := make([]string, 0, len(foundLinks))
+
+			delete(foundLinks, uri.String())
+
 			for link := range foundLinks {
 				links = append(links, link)
 			}
@@ -119,6 +121,10 @@ func (c *Crawler) FindLinks(uri *url.URL, reader io.Reader) []string {
 					continue
 				}
 
+				// Remove the url query params, removes duplicated urls
+				// Example: localhost?lang=en and localhost?lang=fr are the same
+				parsedUrl.RawQuery = ""
+
 				var fullUrl string
 
 				switch {
@@ -128,7 +134,6 @@ func (c *Crawler) FindLinks(uri *url.URL, reader io.Reader) []string {
 					}
 
 					fullUrl = parsedUrl.String()
-
 				default:
 					fullUrl = uri.ResolveReference(parsedUrl).String()
 				}
