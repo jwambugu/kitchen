@@ -103,7 +103,7 @@ func (c *Crawler) DownloadAndSave(ctx context.Context, uri string, filename stri
 //
 // It parses the HTML, finds all <a> tags with href attributes, and returns
 // a list of absolute URLs that belong to the same host as the base URI.
-func (c *Crawler) FindLinks(uri *url.URL, reader io.Reader) []string {
+func (c *Crawler) FindLinks(baseURL *url.URL, reader io.Reader) []string {
 	tokenizer := html.NewTokenizer(reader)
 	foundLinks := make(map[string]struct{})
 
@@ -112,7 +112,7 @@ func (c *Crawler) FindLinks(uri *url.URL, reader io.Reader) []string {
 		case html.ErrorToken:
 			links := make([]string, 0, len(foundLinks))
 
-			delete(foundLinks, uri.String())
+			delete(foundLinks, baseURL.String())
 
 			for link := range foundLinks {
 				links = append(links, link)
@@ -142,27 +142,21 @@ func (c *Crawler) FindLinks(uri *url.URL, reader io.Reader) []string {
 				}
 
 				// Remove the url query params, removes duplicated urls
-				// Example: localhost?lang=en and localhost?lang=fr are the same
+				// Example: localhost?lang=en and localhost?lang=sw are the same
 				parsedUrl.RawQuery = ""
 
-				var fullUrl string
+				full := baseURL.ResolveReference(parsedUrl)
 
-				switch {
-				case parsedUrl.IsAbs():
-					if parsedUrl.Host != uri.Host {
-						continue
-					}
-
-					fullUrl = parsedUrl.String()
-				default:
-					fullUrl = uri.ResolveReference(parsedUrl).String()
+				if full.Host != baseURL.Host {
+					continue
 				}
 
-				fullUrl = strings.TrimRight(fullUrl, "/")
-
-				if _, exists := foundLinks[fullUrl]; !exists {
-					foundLinks[fullUrl] = struct{}{}
+				if !strings.HasPrefix(full.Path, baseURL.Path) {
+					continue
 				}
+
+				fullStr := strings.TrimRight(full.String(), "/")
+				foundLinks[fullStr] = struct{}{}
 			}
 		default:
 			continue
@@ -261,6 +255,7 @@ func (c *Crawler) Crawl(ctx context.Context, rawURL string, depth int, wg *sync.
 	}
 }
 
+// Start begins crawling from the given URL to the specified depth.
 func (c *Crawler) Start(ctx context.Context, rawURL string, depth int) []string {
 	var wg sync.WaitGroup
 	wg.Go(func() {
