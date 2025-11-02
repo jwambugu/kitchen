@@ -16,17 +16,6 @@ import (
 )
 
 func main() {
-	//httpClient := &http.Client{}
-	//c, err := crawler.NewCrawler(httpClient, "")
-	//if err != nil {
-	//	log.Fatalln(err)
-	//}
-	//
-	//ctx := context.Background()
-	//
-	//links := c.Start(ctx, "https://withlotus.com/blog", 10)
-	//log.Printf("[*] completed, visited %d page(s)", len(links))
-
 	var (
 		startURL = flag.String("url", "", "Starting URL to crawl (required)")
 		destDir  = flag.String("dir", "storage", "Destination directory for downloaded pages")
@@ -88,5 +77,4 @@ func main() {
 		fmt.Println("Crawl was interrupted. Resume by running the same command again.")
 		os.Exit(130)
 	}
-
 }
