@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"kitchen/webcrawler/crawler"
 	"log"
 	"net/http"
@@ -13,6 +14,8 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	links := c.Start("https://www.example.com/", 10)
+	ctx := context.Background()
+
+	links := c.Start(ctx, "https://example.com/", 10)
 	log.Printf("[*] completed, visited %d page(s)", len(links))
 }

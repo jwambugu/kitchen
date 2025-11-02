@@ -1,6 +1,7 @@
 package crawler
 
 import (
+	"context"
 	"fmt"
 	"kitchen/pkg/assert"
 	"kitchen/pkg/testutil"
@@ -24,7 +25,10 @@ func TestMain(m *testing.M) {
 }
 
 func TestCrawler_DownloadAndSave(t *testing.T) {
-	httpClient := testutil.NewTestHttpClient()
+	var (
+		ctx        = context.Background()
+		httpClient = testutil.NewTestHttpClient()
+	)
 
 	crawler, err := NewCrawler(httpClient, testDestinationDir)
 	assert.Nil(t, err)
@@ -48,7 +52,7 @@ func TestCrawler_DownloadAndSave(t *testing.T) {
 
 		filename := filepath.Join(testDestinationDir, "localhost")
 
-		buffer, err := crawler.DownloadAndSave(link, filename)
+		buffer, err := crawler.DownloadAndSave(ctx, link, filename)
 		assert.Nil(t, err)
 		assert.NotNil(t, buffer)
 
@@ -57,7 +61,7 @@ func TestCrawler_DownloadAndSave(t *testing.T) {
 	})
 
 	t.Run("url does not exist", func(t *testing.T) {
-		buffer, err := crawler.DownloadAndSave("http://localghost.com", "localhost")
+		buffer, err := crawler.DownloadAndSave(ctx, "http://localghost.com", "localhost")
 		assert.ErrorIs(t, err, ErrPageNotFound)
 		assert.Nil(t, buffer)
 	})
@@ -69,7 +73,7 @@ func TestCrawler_DownloadAndSave(t *testing.T) {
 			return http.StatusInternalServerError, ""
 		})
 
-		buffer, err := crawler.DownloadAndSave(link, "localhost")
+		buffer, err := crawler.DownloadAndSave(ctx, link, "localhost")
 		assert.NotNil(t, err)
 		assert.Nil(t, buffer)
 	})
@@ -79,6 +83,7 @@ func TestCrawler_FindLinks(t *testing.T) {
 	var (
 		link       = "http://localhost.com"
 		httpClient = testutil.NewTestHttpClient()
+		ctx        = context.Background()
 	)
 
 	httpClient.Request(link, func() (code int, body string) {
@@ -99,7 +104,7 @@ func TestCrawler_FindLinks(t *testing.T) {
 
 	filename := filepath.Join(testDestinationDir, "localhost")
 
-	buffer, err := crawler.DownloadAndSave(link, filename)
+	buffer, err := crawler.DownloadAndSave(ctx, link, filename)
 	assert.Nil(t, err)
 	assert.NotNil(t, buffer)
 
@@ -109,4 +114,31 @@ func TestCrawler_FindLinks(t *testing.T) {
 	links := crawler.FindLinks(uri, buffer)
 	assert.NotNil(t, links)
 	assert.Equal[int](t, 3, len(links))
+}
+
+func TestCrawler_Crawl(t *testing.T) {
+	var (
+		link       = "http://localhost.com"
+		httpClient = testutil.NewTestHttpClient()
+		ctx        = context.Background()
+	)
+
+	httpClient.Request(link, func() (code int, body string) {
+		return http.StatusOK, `
+			<ul>
+				<a href="/">Home</a>
+				<a href="/advanced-features">Advance features</a>
+				<a href="/pricing">Pricing</a>
+				<a href="/demo?url=staging">Demo</a>
+				<a href="https://google.com"> External </a>
+				<a href="mailto:someone@example.com">Send email</a>
+				<a href="#">Go Home</a>
+			</ul>`
+	})
+
+	crawler, err := NewCrawler(httpClient, testDestinationDir)
+	assert.Nil(t, err)
+
+	links := crawler.Start(ctx, link, 10)
+	assert.Equal(t, len(links), 4)
 }
