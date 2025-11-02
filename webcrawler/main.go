@@ -13,8 +13,6 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	err = c.Fetch("https://reddit.com")
-	if err != nil {
-		log.Fatalln(err)
-	}
+	links := c.Start("https://www.example.com/", 10)
+	log.Printf("[*] completed, visited %d page(s)", len(links))
 }

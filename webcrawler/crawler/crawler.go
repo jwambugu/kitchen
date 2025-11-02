@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -32,8 +33,10 @@ type HttpClient interface {
 }
 
 type Crawler struct {
+	mu             sync.RWMutex
 	httpClient     HttpClient
 	destinationDir string
+	visitedPages   map[string]struct{}
 }
 
 // DownloadAndSave downloads and saves the uri to the provided filename
@@ -150,16 +153,14 @@ func (c *Crawler) FindLinks(uri *url.URL, reader io.Reader) []string {
 	}
 }
 
-func (c *Crawler) Fetch(rawURL string) (err error) {
+func (c *Crawler) Fetch(rawURL string) (buffer *bytes.Buffer, link []string, err error) {
 	uri, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("parse url: %w", err)
+		return nil, nil, fmt.Errorf("parse url: %w", err)
 	}
 
 	filename := alphanumericRegex.ReplaceAllString(rawURL, "_") + ".html"
 	filename = filepath.Join(c.destinationDir, filename)
-
-	var buffer *bytes.Buffer
 
 	contents, err := os.ReadFile(filename)
 
@@ -169,15 +170,65 @@ func (c *Crawler) Fetch(rawURL string) (err error) {
 	case os.IsNotExist(err):
 		buffer, err = c.DownloadAndSave(uri.String(), filename)
 		if err != nil {
-			return fmt.Errorf("download and save: %w", err)
+			return nil, nil, fmt.Errorf("download and save: %w", err)
 		}
 	case !errors.Is(err, io.EOF):
-		return fmt.Errorf("read file: %w", err)
+		return nil, nil, fmt.Errorf("read file: %w", err)
 	}
 
 	links := c.FindLinks(uri, buffer)
-	log.Println(links)
-	return nil
+	return buffer, links, nil
+}
+
+type fetchLinksResult struct {
+	links []string
+	err   error
+}
+
+func (c *Crawler) Crawl(rawURL string, depth int, wg *sync.WaitGroup) {
+	c.mu.RLock()
+	_, visited := c.visitedPages[rawURL]
+	c.mu.RUnlock()
+
+	if visited || depth <= 0 {
+		return
+	}
+
+	c.mu.Lock()
+	c.visitedPages[rawURL] = struct{}{}
+	c.mu.Unlock()
+
+	_, links, err := c.Fetch(rawURL)
+	if err != nil {
+		log.Printf("failed to fetch url: %s %v\n", rawURL, err)
+		return
+	}
+
+	log.Printf("-- %s, found %d link(s)\n", rawURL, len(links))
+
+	for _, link := range links {
+		wg.Go(func() {
+			c.Crawl(link, depth-1, wg)
+		})
+	}
+}
+
+func (c *Crawler) Start(rawURL string, depth int) []string {
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		c.Crawl(rawURL, depth, &wg)
+	})
+
+	wg.Wait()
+
+	links := make([]string, 0, len(c.visitedPages))
+
+	for link := range c.visitedPages {
+		links = append(links, link)
+	}
+
+	return links
+
 }
 
 func NewCrawler(httpClient HttpClient, destinationDir string) (*Crawler, error) {
@@ -192,5 +243,6 @@ func NewCrawler(httpClient HttpClient, destinationDir string) (*Crawler, error) 
 	return &Crawler{
 		destinationDir: destinationDir,
 		httpClient:     httpClient,
+		visitedPages:   make(map[string]struct{}),
 	}, nil
 }
